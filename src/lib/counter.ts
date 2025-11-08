@@ -1,30 +1,92 @@
-export const counterAddress =
-  process.env.NEXT_PUBLIC_COUNTER_ADDRESS ||
-  "0x0000000000000000000000000000000000000000"; // <-- replace with your deployed contract address
+"use client";
 
-export const counterAbi = [
-  {
-    constant: true,
-    inputs: [],
-    name: "count",
-    outputs: [{ name: "", type: "uint256" }],
-    payable: false,
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    anonymous: false,
-    inputs: [{ indexed: false, name: "newCount", type: "uint256" }],
-    name: "Increased",
-    type: "event",
-  },
-  {
-    constant: false,
-    inputs: [],
-    name: "increase",
-    outputs: [],
-    payable: false,
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-];
+import { useMemo, useState } from "react";
+import {
+  useReadContract,
+  useWatchContractEvent,
+  useWriteContract,
+} from "wagmi";
+import { counterAbi } from "../../artifact/Counter.abi";
+import { hardhat } from "@/config";
+
+const CONTRACT_ADDRESS =
+  "0x5FbDB2315678afecb367f032d93F642f64180aa3" as `0x${string}`;
+
+export function useCounter() {
+  const [eventCounter, setEventCounter] = useState<number | null>(null);
+
+  // Read the current counter value from the contract
+  const { data } = useReadContract({
+    abi: counterAbi,
+    address: CONTRACT_ADDRESS,
+    chainId: hardhat.id,
+    functionName: "x",
+  });
+
+  // Watch for CounterChanged events
+  useWatchContractEvent({
+    address: CONTRACT_ADDRESS,
+    chainId: hardhat.id,
+    abi: counterAbi,
+    eventName: "CounterChanged",
+    onLogs(logs) {
+      for (const log of logs) {
+        console.log("🆕 New event:", log);
+        // Type assertion for the complete log with args
+        const typedLog = log as typeof log & { args: { to?: bigint } };
+        if (typedLog.args?.to !== undefined) {
+          setEventCounter(Number(typedLog.args.to));
+        }
+      }
+    },
+  });
+
+  // Write contract function
+  const { writeContract, isPending, error } = useWriteContract();
+
+  function incrementCounter() {
+    console.log("Incrementing counter...");
+    writeContract(
+      {
+        abi: counterAbi,
+        address: CONTRACT_ADDRESS,
+        chainId: hardhat.id,
+        functionName: "incBy",
+        args: [BigInt(1)], // Use BigInt for uint256
+      },
+      {
+        onSuccess: (hash) => {
+          console.log("✅ Transaction sent:", hash);
+        },
+        onError: (error) => {
+          console.error("❌ Transaction failed:", error);
+          console.error("Error details:", {
+            message: error.message,
+            cause: error.cause,
+            name: error.name,
+          });
+        },
+      },
+    );
+  }
+
+  // Derive counter value from contract data or event updates
+  const counter = useMemo<number | null>(() => {
+    // Prefer event counter if available (more recent)
+    if (eventCounter !== null) {
+      return eventCounter;
+    }
+    // Fall back to contract read data
+    if (data && typeof data === "bigint") {
+      return Number(data);
+    }
+    return null;
+  }, [data, eventCounter]);
+
+  return {
+    counter,
+    incrementCounter,
+    isPending,
+    error,
+  };
+}
