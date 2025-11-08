@@ -1,5 +1,4 @@
-import { createConfig, http, webSocket } from "wagmi";
-import { mainnet, sepolia } from "wagmi/chains";
+import { createConfig, webSocket } from "wagmi";
 import { defineChain } from "viem";
 
 declare module "wagmi" {
